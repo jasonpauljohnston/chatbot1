@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>D-ID Verbal Chatbot</title>
+</head>
+<body>
+    <h2>D-ID Verbal Chatbot</h2>
+    <button id="start-btn">🎤 Start Talking</button>
+    <button id="stop-btn" disabled>🛑 Stop</button>
+    <p id="status">Click "Start Talking" to begin.</p>
+    <audio id="audio-response" controls autoplay hidden></audio>
+
+    <script>
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const status = document.getElementById('status');
+        const audioResponse = document.getElementById('audio-response');
+
+        let recognition;
+        let isListening = false;
+
+        // Your provided D-ID API key
+        const DID_API_KEY = 'amFzb25wYXVsam9obnN0b25AZ21haWwuY29t:cqoeOkfqQsT16iiCHn5SL';
+        const DID_API_URL = 'https://api.d-id.com';
+
+        // Initialize Speech Recognition
+        function initSpeechRecognition() {
+            window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new window.SpeechRecognition();
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                status.textContent = 'Listening...';
+                isListening = true;
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            };
+
+            recognition.onend = () => {
+                status.textContent = 'Stopped listening.';
+                isListening = false;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            };
+
+            recognition.onerror = (event) => {
+                status.textContent = 'Error occurred: ' + event.error;
+                isListening = false;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                status.textContent = 'You said: ' + transcript;
+                sendToDID(transcript);
+            };
+        }
+
+        // Send text to D-ID API and get audio response
+        async function sendToDID(text) {
+            status.textContent = 'Processing...';
+
+            const response = await fetch(`${DID_API_URL}/talks`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${btoa(DID_API_KEY)}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    script: {
+                        type: 'text',
+                        input: text
+                    },
+                    // Using D-ID's built-in avatar (no external images required)
+                    presenter_id: 'amy-jcwCkr1grs' // Official D-ID presenter avatar
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.id) {
+                pollForResult(data.id);
+            } else {
+                status.textContent = 'Error creating talk.';
+            }
+        }
+
+        // Poll D-ID API for result
+        async function pollForResult(talkId) {
+            const interval = setInterval(async () => {
+                const res = await fetch(`${DID_API_URL}/talks/${talkId}`, {
+                    headers: {
+                        'Authorization': `Basic ${btoa(DID_API_KEY)}`
+                    }
+                });
+                const result = await res.json();
+
+                if (result.status === 'done') {
+                    clearInterval(interval);
+                    audioResponse.src = result.result_url;
+                    audioResponse.hidden = false;
+                    status.textContent = 'Response ready!';
+                } else if (result.status === 'error') {
+                    clearInterval(interval);
+                    status.textContent = 'Error generating response.';
+                }
+            }, 2000);
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', () => {
+            if (!recognition) initSpeechRecognition();
+            recognition.start();
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (recognition && isListening) recognition.stop();
+        });
+    </script>
+</body>
+</html>
